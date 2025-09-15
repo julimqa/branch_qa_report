@@ -240,20 +240,8 @@
                 });
 
                 console.log('Response status:', response.status);
-                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-                
-                // 응답을 텍스트로 먼저 받아서 확인
-                const responseText = await response.text();
-                console.log('Raw response:', responseText);
-
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                    console.log('Parsed response:', data);
-                } catch (parseError) {
-                    console.error('JSON Parse Error:', parseError);
-                    throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}...`);
-                }
+                const data = await response.json();
+                console.log('Response data:', data);
 
                 if (!response.ok) {
                     throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
@@ -271,30 +259,25 @@
                 let errorMessage = `❌ 오류가 발생했습니다: ${error.message}`;
                 
                 // 구체적인 오류 메시지 제공
-                if (error.message.includes('NetworkError') || error.message.includes('fetch')) {
+                if (error.message.includes('Network error')) {
                     errorMessage += `
 
-🔧 네트워크 연결을 확인해주세요
-• Netlify Functions가 배포되었는지 확인
-• 환경변수가 설정되었는지 확인`;
+🔧 네트워크 연결을 확인해주세요`;
                 } else if (error.message.includes('401') || error.message.includes('403')) {
                     errorMessage += `
 
-🔐 Confluence 권한을 확인해주세요
-• API 토큰이 올바른지 확인
-• NFTMetaverse 스페이스 접근 권한 확인`;
+🔐 Confluence 권한을 확인해주세요`;
                 } else if (error.message.includes('404')) {
                     errorMessage += `
 
-📄 리소스를 찾을 수 없습니다
-• 템플릿 페이지(ID: 42008650) 존재 확인
-• QA Report 페이지(ID: 29698636) 존재 확인`;
-                } else if (error.message.includes('Invalid JSON')) {
+📄 템플릿 페이지를 찾을 수 없습니다`;
+                } else {
                     errorMessage += `
 
-🛠️ 서버 응답 오류
-• Netlify Functions 로그를 확인해주세요
-• 환경변수 설정을 확인해주세요`;
+확인사항:
+• Confluence에 로그인되어 있나요?
+• NFTMetaverse 스페이스 접근 권한이 있나요?
+• 템플릿 페이지가 존재하나요?`;
                 }
                 
                 showStatus(errorMessage, 'error');
@@ -319,3 +302,117 @@
     </script>
 </body>
 </html>
+
+<!-- 
+Netlify Function 파일: netlify/functions/create-qa-report.js
+
+const axios = require('axios');
+
+exports.handler = async (event, context) => {
+    // CORS 헤더
+    const headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS'
+    };
+
+    // OPTIONS 요청 처리
+    if (event.httpMethod === 'OPTIONS') {
+        return { statusCode: 200, headers, body: '' };
+    }
+
+    if (event.httpMethod !== 'POST') {
+        return {
+            statusCode: 405,
+            headers,
+            body: JSON.stringify({ error: 'Method not allowed' })
+        };
+    }
+
+    try {
+        const { affectedVersion, pageTitle } = JSON.parse(event.body);
+        
+        if (!affectedVersion) {
+            return {
+                statusCode: 400,
+                headers,
+                body: JSON.stringify({ error: 'AffectedVersion is required' })
+            };
+        }
+
+        // Confluence API 설정
+        const auth = {
+            username: process.env.CONFLUENCE_EMAIL,
+            password: process.env.CONFLUENCE_API_TOKEN
+        };
+
+        // 1. 템플릿 페이지 내용 가져오기
+        const templateResponse = await axios.get(
+            'https://overdare.atlassian.net/wiki/rest/api/content/42008650?expand=body.storage',
+            {
+                auth,
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Atlassian-Token': 'no-check'
+                }
+            }
+        );
+
+        let templateContent = templateResponse.data.body.storage.value;
+
+        // 2. JQL에서 affectedVersion 교체
+        templateContent = templateContent.replace(/ovdr-6116/g, affectedVersion);
+
+        // 3. 새 페이지 생성
+        const finalTitle = pageTitle || `${affectedVersion} Report`;
+
+        const createResponse = await axios.post(
+            'https://overdare.atlassian.net/wiki/rest/api/content',
+            {
+                type: 'page',
+                title: finalTitle,
+                space: { key: 'NFTMetaverse' },
+                parent: { id: '29698636' },
+                body: {
+                    storage: {
+                        value: templateContent,
+                        representation: 'storage'
+                    }
+                }
+            },
+            {
+                auth,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Atlassian-Token': 'no-check'
+                }
+            }
+        );
+
+        const newPageData = createResponse.data;
+        const pageUrl = `https://overdare.atlassian.net/wiki${newPageData._links.webui}`;
+
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({
+                success: true,
+                pageUrl: pageUrl,
+                pageTitle: finalTitle,
+                pageId: newPageData.id
+            })
+        };
+
+    } catch (error) {
+        console.error('Error:', error);
+        return {
+            statusCode: 500,
+            headers,
+            body: JSON.stringify({
+                error: 'Failed to create QA Report',
+                details: error.response?.data?.message || error.message
+            })
+        };
+    }
+};
+-->
