@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Report Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .header p {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e6ed;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .generate-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .generate-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .generate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            display: none;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.loading {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .small-text {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        
+        .confluence-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .confluence-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 QA Report Generator</h1>
+            <p>NFTMetaverse 스페이스용 QA Report 자동 생성기</p>
+        </div>
+        
+        <div class="form-group">
+            <label for="affectedVersion">🎯 AffectedVersion</label>
+            <input type="text" id="affectedVersion" placeholder="예: ovdr-6117, QA-149" autofocus>
+            <div class="small-text">템플릿의 모든 JQL에서 교체될 버전 번호입니다</div>
+        </div>
+        
+        <div class="form-group">
+            <label for="pageTitle">📝 페이지 제목 (선택사항)</label>
+            <input type="text" id="pageTitle" placeholder="비워두면 자동 생성됩니다">
+            <div class="small-text">비워두면 "{AffectedVersion} Report"로 자동 생성됩니다</div>
+        </div>
+        
+        <button class="generate-btn" onclick="generateReport()">
+            🚀 QA Report 생성
+        </button>
+        
+        <div id="status" class="status"></div>
+        
+        <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">
+            <h4 style="color: #667eea; margin-bottom: 10px;">ℹ️ 사용 안내</h4>
+            <ul style="margin: 0; color: #6c757d; font-size: 14px; line-height: 1.6;">
+                <li><strong>템플릿:</strong> "Report Template - Branch" 페이지를 복사합니다</li>
+                <li><strong>위치:</strong> QA Report 페이지의 하위 페이지로 생성됩니다</li>
+                <li><strong>JQL 업데이트:</strong> 모든 affectedVersion이 자동 교체됩니다</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function showStatus(message, type, isHTML = false) {
+            const statusEl = document.getElementById('status');
+            if (isHTML) {
+                statusEl.innerHTML = message;
+            } else {
+                statusEl.textContent = message;
+            }
+            statusEl.className = `status ${type}`;
+            statusEl.style.display = 'block';
+        }
+
+        async function generateReport() {
+            const affectedVersion = document.getElementById('affectedVersion').value.trim();
+            const pageTitle = document.getElementById('pageTitle').value.trim();
+            
+            if (!affectedVersion) {
+                showStatus('❌ AffectedVersion을 입력해주세요.', 'error');
+                return;
+            }
+            
+            const btn = document.querySelector('.generate-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '🔄 생성 중...';
+            
+            showStatus('🔄 Confluence에 QA Report를 생성하고 있습니다...', 'loading');
+            
+            try {
+                // iframe 안에서 실행 중인지 확인
+                if (window.parent !== window) {
+                    // PostMessage로 부모 창(Confluence)에 요청 전송
+                    window.parent.postMessage({
+                        type: 'CREATE_QA_REPORT',
+                        affectedVersion: affectedVersion,
+                        pageTitle: pageTitle
+                    }, '*');
+                    
+                    // 응답 대기
+                    const result = await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            reject(new Error('요청 시간 초과 (30초)'));
+                        }, 30000);
+                        
+                        function messageHandler(event) {
+                            if (event.data.type === 'PAGE_CREATED') {
+                                clearTimeout(timeout);
+                                window.removeEventListener('message', messageHandler);
+                                
+                                if (event.data.success) {
+                                    resolve(event.data);
+                                } else {
+                                    reject(new Error(event.data.error));
+                                }
+                            }
+                        }
+                        
+                        window.addEventListener('message', messageHandler);
+                    });
+                    
+                    // 성공 메시지 표시
+                    showStatus(`✅ QA Report가 성공적으로 생성되었습니다!<br><br>📄 <strong>${result.pageTitle}</strong><br><br><a href="${result.pageUrl}" target="_blank" class="confluence-link">생성된 페이지 보기 →</a>`, 'success', true);
+                    
+                } else {
+                    // 독립 실행 모드 (Claude API 사용)
+                    showStatus('🔄 Claude를 통해 페이지 생성을 요청하고 있습니다...', 'loading');
+                    
+                    // 실제로는 이 부분에서 Claude API 호출하거나
+                    // 사용자에게 Claude에 요청하라는 안내를 표시
+                    const finalTitle = pageTitle || `${affectedVersion} Report`;
+                    
+                    showStatus(`📝 다음 명령어를 Claude에게 요청하세요:<br><br><code>"NFTMetaverse 스페이스에 ${affectedVersion}로 QA Report 페이지 만들어줘. 제목은 '${finalTitle}'로 하고 QA Report 페이지 하위에 생성해줘."</code><br><br>또는 <a href="https://overdare.atlassian.net/wiki/spaces/NFTMetaverse/pages/29698636/QA+Report" target="_blank" class="confluence-link">Confluence에서 iframe 버전을 사용하세요</a>`, 'success', true);
+                }
+                
+                // 입력 필드 초기화
+                document.getElementById('affectedVersion').value = '';
+                document.getElementById('pageTitle').value = '';
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus(`❌ 오류가 발생했습니다: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+
+        // Enter 키 지원
+        document.getElementById('affectedVersion').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                generateReport();
+            }
+        });
+
+        document.getElementById('pageTitle').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                generateReport();
+            }
+        });
+    </script>
+</body>
+</html>
