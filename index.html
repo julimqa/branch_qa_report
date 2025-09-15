@@ -136,13 +136,35 @@
         .confluence-link:hover {
             text-decoration: underline;
         }
+        
+        .info-box {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .info-title {
+            color: #495057;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .info-list {
+            color: #6c757d;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0;
+            padding-left: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>🚀 QA Report Generator</h1>
-            <p>NFTMetaverse 스페이스용 QA Report 자동 생성기</p>
+            <p>자동으로 NFTMetaverse QA Report 페이지를 생성합니다</p>
         </div>
         
         <div class="form-group">
@@ -163,12 +185,13 @@
         
         <div id="status" class="status"></div>
         
-        <div style="margin-top: 30px; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">
-            <h4 style="color: #667eea; margin-bottom: 10px;">ℹ️ 사용 안내</h4>
-            <ul style="margin: 0; color: #6c757d; font-size: 14px; line-height: 1.6;">
-                <li><strong>템플릿:</strong> "Report Template - Branch" 페이지를 복사합니다</li>
-                <li><strong>위치:</strong> QA Report 페이지의 하위 페이지로 생성됩니다</li>
-                <li><strong>JQL 업데이트:</strong> 모든 affectedVersion이 자동 교체됩니다</li>
+        <div class="info-box">
+            <div class="info-title">ℹ️ 자동 생성 과정</div>
+            <ul class="info-list">
+                <li><strong>템플릿 복사:</strong> "Report Template - Branch" 페이지를 자동으로 복사</li>
+                <li><strong>JQL 업데이트:</strong> 모든 affectedVersion이 입력한 값으로 교체</li>
+                <li><strong>페이지 생성:</strong> QA Report 페이지의 하위 페이지로 생성</li>
+                <li><strong>즉시 사용:</strong> 생성 완료 즉시 링크 제공</li>
             </ul>
         </div>
     </div>
@@ -199,53 +222,44 @@
             btn.disabled = true;
             btn.textContent = '🔄 생성 중...';
             
-            showStatus('🔄 Confluence에 QA Report를 생성하고 있습니다...', 'loading');
+            showStatus('🔄 템플릿을 복사하고 QA Report 페이지를 생성하고 있습니다...', 'loading');
             
             try {
-                // iframe 안에서 실행 중인지 확인
-                if (window.parent !== window) {
-                    // PostMessage로 부모 창(Confluence)에 요청 전송
-                    window.parent.postMessage({
-                        type: 'CREATE_QA_REPORT',
+                console.log('Sending request to Netlify Function...');
+                
+                // Netlify Function 호출
+                const response = await fetch('/.netlify/functions/create-qa-report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
                         affectedVersion: affectedVersion,
                         pageTitle: pageTitle
-                    }, '*');
-                    
-                    // 응답 대기
-                    const result = await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            reject(new Error('요청 시간 초과 (30초)'));
-                        }, 30000);
-                        
-                        function messageHandler(event) {
-                            if (event.data.type === 'PAGE_CREATED') {
-                                clearTimeout(timeout);
-                                window.removeEventListener('message', messageHandler);
-                                
-                                if (event.data.success) {
-                                    resolve(event.data);
-                                } else {
-                                    reject(new Error(event.data.error));
-                                }
-                            }
-                        }
-                        
-                        window.addEventListener('message', messageHandler);
-                    });
-                    
-                    // 성공 메시지 표시
-                    showStatus(`✅ QA Report가 성공적으로 생성되었습니다!<br><br>📄 <strong>${result.pageTitle}</strong><br><br><a href="${result.pageUrl}" target="_blank" class="confluence-link">생성된 페이지 보기 →</a>`, 'success', true);
-                    
-                } else {
-                    // 독립 실행 모드 (Claude API 사용)
-                    showStatus('🔄 Claude를 통해 페이지 생성을 요청하고 있습니다...', 'loading');
-                    
-                    // 실제로는 이 부분에서 Claude API 호출하거나
-                    // 사용자에게 Claude에 요청하라는 안내를 표시
-                    const finalTitle = pageTitle || `${affectedVersion} Report`;
-                    
-                    showStatus(`📝 다음 명령어를 Claude에게 요청하세요:<br><br><code>"NFTMetaverse 스페이스에 ${affectedVersion}로 QA Report 페이지 만들어줘. 제목은 '${finalTitle}'로 하고 QA Report 페이지 하위에 생성해줘."</code><br><br>또는 <a href="https://overdare.atlassian.net/wiki/spaces/NFTMetaverse/pages/29698636/QA+Report" target="_blank" class="confluence-link">Confluence에서 iframe 버전을 사용하세요</a>`, 'success', true);
+                    })
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+                
+                // 응답을 텍스트로 먼저 받아서 확인
+                const responseText = await response.text();
+                console.log('Raw response:', responseText);
+
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                    console.log('Parsed response:', data);
+                } catch (parseError) {
+                    console.error('JSON Parse Error:', parseError);
+                    throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}...`);
                 }
+
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                showStatus(`✅ QA Report가 성공적으로 생성되었습니다!<br><br>📄 <strong>${data.pageTitle}</strong><br><br><a href="${data.pageUrl}" target="_blank" class="confluence-link">생성된 페이지 보기 →</a><br><br><small>페이지 ID: ${data.pageId}</small>`, 'success', true);
                 
                 // 입력 필드 초기화
                 document.getElementById('affectedVersion').value = '';
@@ -253,7 +267,37 @@
                 
             } catch (error) {
                 console.error('Error:', error);
-                showStatus(`❌ 오류가 발생했습니다: ${error.message}`, 'error');
+                
+                let errorMessage = `❌ 오류가 발생했습니다: ${error.message}`;
+                
+                // 구체적인 오류 메시지 제공
+                if (error.message.includes('NetworkError') || error.message.includes('fetch')) {
+                    errorMessage += `
+
+🔧 네트워크 연결을 확인해주세요
+• Netlify Functions가 배포되었는지 확인
+• 환경변수가 설정되었는지 확인`;
+                } else if (error.message.includes('401') || error.message.includes('403')) {
+                    errorMessage += `
+
+🔐 Confluence 권한을 확인해주세요
+• API 토큰이 올바른지 확인
+• NFTMetaverse 스페이스 접근 권한 확인`;
+                } else if (error.message.includes('404')) {
+                    errorMessage += `
+
+📄 리소스를 찾을 수 없습니다
+• 템플릿 페이지(ID: 42008650) 존재 확인
+• QA Report 페이지(ID: 29698636) 존재 확인`;
+                } else if (error.message.includes('Invalid JSON')) {
+                    errorMessage += `
+
+🛠️ 서버 응답 오류
+• Netlify Functions 로그를 확인해주세요
+• 환경변수 설정을 확인해주세요`;
+                }
+                
+                showStatus(errorMessage, 'error');
             } finally {
                 btn.disabled = false;
                 btn.textContent = originalText;
