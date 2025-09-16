@@ -3,10 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>OVDR Report Runner</title>
+  <title>OVDR QA Report</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* 미세한 로딩 애니메이션 */
     .spin { animation: spin 1s linear infinite }
     @keyframes spin { to { transform: rotate(360deg) } }
   </style>
@@ -14,15 +13,9 @@
 <body class="bg-slate-50 text-slate-800">
   <main class="max-w-3xl mx-auto p-6">
     <header class="mb-6">
-      <h1 class="text-2xl font-semibold tracking-tight">OVDR Report Runner</h1>
-      <p class="text-sm text-slate-500">Confluence 리포트 생성을 빠르게 트리거하고, 변경 요약을 확인하세요.</p>
+      <h1 class="text-2xl font-semibold tracking-tight">OVDR QA Report</h1>
+      <p class="text-sm text-slate-500">Confluence 리포트 생성을 트리거하고, 생성된 페이지로 바로 이동하세요.</p>
     </header>
-
-    <!-- 알림 영역 -->
-    <div id="notice" class="hidden mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 text-sm">
-      <strong class="font-medium">참고:</strong> 기본은 <em>숨김 iframe</em>으로 호출하여 JSON이 화면에 보이지 않습니다.
-      CORS를 설정하셨다면 상단 코드의 <code>USE_FETCH = true</code>로 바꿔 fetch 모드로 상세 결과를 볼 수 있습니다.
-    </div>
 
     <!-- 탭 -->
     <div class="mb-4 inline-flex rounded-lg border bg-white p-1">
@@ -33,11 +26,11 @@
     <!-- Branch Report 카드 -->
     <section id="card-branch" class="rounded-2xl bg-white shadow-sm border p-6 space-y-5">
       <div class="space-y-1">
-        <h2 class="text-lg font-semibold">Branch Report</h2>
+        <h2 class="text-lg font-semibold">AffectedVersion 기반 Report</h2>
         <p class="text-sm text-slate-500">JQL의 날짜 범위와 <code>affectedVersion</code>을 치환합니다.</p>
       </div>
 
-      <form id="form-branch" class="space-y-4" novalidate>
+      <form id="form-branch" class="space-y-4" action="https://n8n.ovdr.io/webhook/confluence/copy-and-replace" method="GET" target="sink">
         <label class="block">
           <span class="text-sm font-medium">affectedVersion</span>
           <input id="input-affected" name="affectedVersion" type="text"
@@ -49,12 +42,14 @@
           <button type="submit"
                   class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.99]">
             <span class="spin hidden" id="spin-branch">⏳</span>
-            <span>Run Branch Report</span>
+            <span>Run AffectedVersion Report</span>
           </button>
           <button type="button" id="preview-branch"
                   class="text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4">
             변경 내용 미리보기
           </button>
+          <a id="open-branch" href="#" target="_blank" rel="noopener"
+             class="hidden text-sm rounded-lg border px-3 py-2 hover:bg-slate-50">생성된 페이지 열기</a>
         </div>
       </form>
 
@@ -64,11 +59,11 @@
     <!-- Release Report 카드 -->
     <section id="card-release" class="hidden rounded-2xl bg-white shadow-sm border p-6 space-y-5">
       <div class="space-y-1">
-        <h2 class="text-lg font-semibold">Release Report</h2>
+        <h2 class="text-lg font-semibold">LinkedIssues 기반 Report</h2>
         <p class="text-sm text-slate-500">JQL의 날짜 범위와 <code>linkedIssues("…")</code>를 치환합니다.</p>
       </div>
 
-      <form id="form-release" class="space-y-4" novalidate>
+      <form id="form-release" class="space-y-4" action="https://n8n.ovdr.io/webhook/confluence/copy-and-replace-release" method="GET" target="sink">
         <label class="block">
           <span class="text-sm font-medium">linked (Jira Key)</span>
           <input id="input-linked" name="linked" type="text"
@@ -80,44 +75,34 @@
           <button type="submit"
                   class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.99]">
             <span class="spin hidden" id="spin-release">⏳</span>
-            <span>Run Release Report</span>
+            <span>Run LinkedIssues Report</span>
           </button>
           <button type="button" id="preview-release"
                   class="text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4">
             변경 내용 미리보기
           </button>
+          <a id="open-release" href="#" target="_blank" rel="noopener"
+             class="hidden text-sm rounded-lg border px-3 py-2 hover:bg-slate-50">생성된 페이지 열기</a>
         </div>
       </form>
 
       <div id="result-release" class="hidden rounded-xl border bg-slate-50 p-4 text-sm space-y-2"></div>
     </section>
 
-    <!-- 숨김 iframe: JSON 노출 없이 호출만 수행 -->
+    <!-- 숨김 iframe: JSON 노출 없이 호출만 수행 + postMessage 수신 -->
     <iframe id="sink" name="sink" class="hidden" referrerpolicy="no-referrer"></iframe>
-
-    <!-- 하단 도움말 -->
-    <footer class="mt-8 text-xs text-slate-500">
-      <p>※ Confluence 새 페이지 링크는 응답 JSON의 <code>links.webui</code>로 만들 수 있습니다. 기본(iframe) 모드에선 보안을 위해 파싱하지 않습니다.
-         필요하면 n8n 응답에 CORS를 추가하고 <code>USE_FETCH = true</code>로 바꿔 주세요. <span class="italic">(CORS 적용 방식은 환경에 따라 다를 수 있어 <b>확실하지 않음</b>)</span></p>
-    </footer>
   </main>
 
   <script>
     // ====== 환경 설정 ======
-    const BRANCH_URL  = "https://n8n.ovdr.io/webhook/confluence/copy-and-replace";
-    const RELEASE_URL = "https://n8n.ovdr.io/webhook/confluence/copy-and-replace-release";
+    const CONFLUENCE_BASE = "https://overdare.atlassian.net/wiki"; // webui 앞에 붙일 호스트
+    const PARENT_PAGE_ID = "29698636"; // 부모 페이지로 이동 버튼(폴백) 용도
 
-    // 기본은 숨김 iframe 방식(서버 CORS 설정 불필요)
-    // CORS를 설정했다면 true로 바꿔 fetch 모드 사용 가능
-    const USE_FETCH = false;
-
-    // 선택(탭) 전환
+    // 탭 전환
     const tabBranch  = document.getElementById('tab-branch');
     const tabRelease = document.getElementById('tab-release');
     const cardBranch = document.getElementById('card-branch');
     const cardRelease= document.getElementById('card-release');
-    const notice     = document.getElementById('notice');
-
     function setTab(which){ 
       const isBranch = which === 'branch';
       tabBranch.className  = "px-4 py-2 text-sm rounded-md " + (isBranch ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900");
@@ -128,51 +113,29 @@
     tabBranch.onclick  = ()=>setTab('branch');
     tabRelease.onclick = ()=>setTab('release');
     setTab('branch');
-    notice.classList.toggle('hidden', USE_FETCH); // fetch 모드면 안내 숨김
 
-    // ====== 공통 유틸 ======
+    // 공통 포맷터
     const fmt2 = n => String(n).padStart(2,'0');
     function kstDateParts(d=new Date()){
-      // 클라이언트에서 KST로 보이는 목적용 계산 (서버 기준과 몇 초 차이는 있을 수 있어 "확실하지 않음")
       const s = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-      return {
-        yyyy: s.getFullYear(),
-        mm: fmt2(s.getMonth()+1),
-        dd: fmt2(s.getDate()),
-        HH: fmt2(s.getHours()),
-        MM: fmt2(s.getMinutes()),
-        SS: fmt2(s.getSeconds())
-      };
+      return { yyyy:s.getFullYear(), mm:fmt2(s.getMonth()+1), dd:fmt2(s.getDate()), HH:fmt2(s.getHours()), MM:fmt2(s.getMinutes()), SS:fmt2(s.getSeconds()) };
     }
-    function jqlDateKST(){
-      const p = kstDateParts();
-      return `${p.yyyy}/${p.mm}/${p.dd}`;
-    }
-    function titleStampKST(){
-      const p = kstDateParts();
-      return `${p.yyyy.toString().slice(-2)}/${p.mm}/${p.dd}${p.HH}:${p.MM}:${p.SS}`;
-    }
+    function jqlDateKST(){ const p=kstDateParts(); return `${p.yyyy}/${p.mm}/${p.dd}`; }
+    function titleStampKST(){ const p=kstDateParts(); return `${p.yyyy.toString().slice(-2)}/${p.mm}/${p.dd}${p.HH}:${p.MM}:${p.SS}`; }
     function el(id){ return document.getElementById(id); }
-    function showResult(boxId, html){
-      const box = el(boxId);
-      box.innerHTML = html;
-      box.classList.remove('hidden');
-    }
-    function hideResult(boxId){
-      el(boxId).classList.add('hidden');
-      el(boxId).innerHTML = "";
-    }
+    function showResult(boxId, html){ const box=el(boxId); box.innerHTML=html; box.classList.remove('hidden'); }
+    function hideResult(boxId){ const box=el(boxId); box.classList.add('hidden'); box.innerHTML=""; }
     function busy(spinId, on){ el(spinId).classList.toggle('hidden', !on); }
+    function escapeHtml(s){ return s.replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[m])); }
 
-    // ====== 미리보기(무엇이 바뀌는지) ======
+    // 미리보기
     function previewBranch(avRaw){
       const date = jqlDateKST();
       const start = `${date} 00:00`;
       const end   = `${date} 23:59`;
       const av = (avRaw||"").trim();
       const title = titleStampKST() + (av ? ` - ${av}` : "");
-      const avLine = av ? `<li>affectedVersion → <code>"${escapeHtml(av)}"</code> 로 강제 인용 처리</li>`
-                        : `<li>affectedVersion 변경 없음</li>`;
+      const avLine = av ? `<li>affectedVersion → <code>"${escapeHtml(av)}"</code></li>` : `<li>affectedVersion 변경 없음</li>`;
       showResult("result-branch", `
         <div class="text-slate-700">
           <div class="font-medium mb-1">이번 실행으로 적용되는 변경</div>
@@ -180,10 +143,9 @@
             <li>created &gt;= '<code>${start}</code>'</li>
             <li>created &lt;= '<code>${end}</code>'</li>
             ${avLine}
-            <li>페이지 제목 미리보기: <code>${title}</code> <span class="text-xs text-slate-500">(KST, 로컬 계산 · <b>확실하지 않음</b>)</span></li>
+            <li>제목: <code>${title}</code></li>
           </ul>
-        </div>
-      `);
+        </div>`);
     }
     function previewRelease(linkedRaw){
       const date = jqlDateKST();
@@ -191,8 +153,7 @@
       const end   = `${date} 23:59`;
       const lk = (linkedRaw||"").trim();
       const title = titleStampKST() + (lk ? ` - ${lk}` : "");
-      const lkLine = lk ? `<li>linkedIssues → <code>"${escapeHtml(lk)}"</code> 로 교정</li>`
-                        : `<li>linkedIssues 변경 없음</li>`;
+      const lkLine = lk ? `<li>linkedIssues → <code>"${escapeHtml(lk)}"</code></li>` : `<li>linkedIssues 변경 없음</li>`;
       showResult("result-release", `
         <div class="text-slate-700">
           <div class="font-medium mb-1">이번 실행으로 적용되는 변경</div>
@@ -200,121 +161,50 @@
             <li>created &gt;= '<code>${start}</code>'</li>
             <li>created &lt;= '<code>${end}</code>'</li>
             ${lkLine}
-            <li>페이지 제목 미리보기: <code>${title}</code> <span class="text-xs text-slate-500">(KST, 로컬 계산 · <b>확실하지 않음</b>)</span></li>
+            <li>제목: <code>${title}</code></li>
           </ul>
-        </div>
-      `);
-    }
-    function escapeHtml(s){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-
-    // ====== 실행 (iframe / fetch) ======
-    async function runBranch(avRaw){
-      const av = (avRaw||"").trim();
-      const url = BRANCH_URL + (av ? `?affectedVersion=${encodeURIComponent(av)}` : "");
-      if (USE_FETCH){
-        return callWithFetch(url, "result-branch");
-      } else {
-        callWithIframe(url, "result-branch");
-      }
-    }
-    async function runRelease(lkRaw){
-      const lk = (lkRaw||"").trim();
-      const url = RELEASE_URL + (lk ? `?linked=${encodeURIComponent(lk)}` : "");
-      if (USE_FETCH){
-        return callWithFetch(url, "result-release");
-      } else {
-        callWithIframe(url, "result-release");
-      }
+        </div>`);
     }
 
-    function callWithIframe(url, boxId){
-      const iframe = el('sink');
-      // onload: 호출 완료 신호 (응답 본문은 크로스도메인이라 읽지 않음)
-      iframe.onload = ()=>{
-        showResult(boxId, successBlock(`
-          트리거가 전송되었습니다.<br/>
-          Confluence에서 새 페이지를 확인하세요. (상위 페이지에서 최근 문서를 확인)
-        `));
-      };
-      iframe.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
-    }
-
-    async function callWithFetch(url, boxId){
-      try{
-        const res = await fetch(url, { method: 'GET', credentials: 'omit' }); // CORS 허용 필요
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        // 응답 JSON이 Confluence 업데이트 결과(페이지/링크 등)를 포함한다고 가정(환경에 따라 <확실하지 않음>)
-        const data = await res.json().catch(()=> ({}));
-        showResult(boxId, renderSuccessFromJson(data));
-      }catch(err){
-        showResult(boxId, errorBlock(`
-          호출 중 오류가 발생했습니다: <code>${escapeHtml(String(err.message||err))}</code><br/>
-          fetch 모드는 CORS가 필요합니다. 기본(iframe) 모드를 사용하거나, n8n 응답에
-          <code>Access-Control-Allow-Origin</code> 헤더를 추가하세요. <span class="italic">(환경별로 상이 · <b>확실하지 않음</b>)</span>
-        `));
-      }
-    }
-
-    function successBlock(inner){
-      return `<div class="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800 text-sm">
-        <div class="font-medium mb-1">✅ 성공</div>
-        <div>${inner}</div>
-      </div>`;
-    }
-    function errorBlock(inner){
-      return `<div class="rounded-lg border border-rose-300 bg-rose-50 p-3 text-rose-800 text-sm">
-        <div class="font-medium mb-1">⚠️ 오류</div>
-        <div>${inner}</div>
-      </div>`;
-    }
-    function renderSuccessFromJson(data){
-      // Confluence content 응답의 일반적인 필드: id, title, _links.webui 혹은 links.webui 등 (스키마는 인스턴스 설정에 따라 <확실하지 않음>)
-      const id = data?.id || data?.body?.id || data?.result?.id;
-      const title = data?.title || data?.body?.title || "(제목 알 수 없음)";
-      const webui = (data?._links?.webui) || (data?.links?.webui) || "";
-      const base = "https://overdare.atlassian.net/wiki"; // 인스턴스 호스트 (필요시 수정)
-      const pageUrl = webui ? (base + webui) : "";
-      const linkHtml = pageUrl ? `<a href="${pageUrl}" target="_blank" rel="noopener" class="underline">페이지 열기</a>` : "<em class='text-slate-500'>링크 알 수 없음</em>";
-      return successBlock(`
-        <div class="space-y-1">
-          <div>제목: <code>${escapeHtml(title)}</code></div>
-          <div>ID: <code>${escapeHtml(String(id||"알 수 없음"))}</code></div>
-          <div>${linkHtml}</div>
-        </div>
-        <details class="mt-2">
-          <summary class="cursor-pointer select-none text-slate-600">원시 JSON 보기</summary>
-          <pre class="mt-2 overflow-auto rounded bg-white/60 p-3 text-xs border">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
-        </details>
-      `);
-    }
-
-    // ====== 이벤트 바인딩 ======
-    el('preview-branch').onclick = ()=>{
-      hideResult('result-branch');
-      previewBranch(el('input-affected').value);
-    };
-    el('preview-release').onclick = ()=>{
-      hideResult('result-release');
-      previewRelease(el('input-linked').value);
-    };
-
-    el('form-branch').addEventListener('submit', (e)=>{
-      e.preventDefault();
-      hideResult('result-branch');
-      previewBranch(el('input-affected').value);
+    // 제출 이벤트 (스피너 및 결과 초기화)
+    document.getElementById('form-branch').addEventListener('submit', (e)=>{
       busy('spin-branch', true);
-      Promise.resolve(runBranch(el('input-affected').value))
-        .finally(()=> busy('spin-branch', false));
+      hideResult('result-branch');
+      previewBranch(document.getElementById('input-affected').value);
+      // 버튼 비활성화는 생략 (연속 실행 허용)
+      setTimeout(()=>busy('spin-branch', false), 500);
+    });
+    document.getElementById('form-release').addEventListener('submit', (e)=>{
+      busy('spin-release', true);
+      hideResult('result-release');
+      previewRelease(document.getElementById('input-linked').value);
+      setTimeout(()=>busy('spin-release', false), 500);
     });
 
-    el('form-release').addEventListener('submit', (e)=>{
-      e.preventDefault();
-      hideResult('result-release');
-      previewRelease(el('input-linked').value);
-      busy('spin-release', true);
-      Promise.resolve(runRelease(el('input-linked').value))
-        .finally(()=> busy('spin-release', false));
+    document.getElementById('preview-branch').onclick = ()=>{
+      hideResult('result-branch'); previewBranch(document.getElementById('input-affected').value);
+    };
+    document.getElementById('preview-release').onclick = ()=>{
+      hideResult('result-release'); previewRelease(document.getElementById('input-linked').value);
+    };
+
+    // ===== postMessage를 통해 n8n이 보낸 결과를 받아 "생성된 페이지 열기" 버튼 활성화 =====
+    window.addEventListener('message', (event)=>{
+      const d = event.data || {};
+      if (d && (d.source === 'ovdr-report') && (d.webui || d.pageUrl)){
+        const url = d.pageUrl ? d.pageUrl : (CONFLUENCE_BASE + d.webui);
+        // 어떤 폼의 결과인지 구분 (optional: d.kind = 'branch'|'release' 를 n8n 쪽에서 같이 보낼 수 있음)
+        // 여기서는 링크가 있으면 두 버튼 모두 업데이트
+        const a1 = document.getElementById('open-branch');
+        const a2 = document.getElementById('open-release');
+        [a1, a2].forEach(a => { a.href = url; a.classList.remove('hidden'); });
+      }
     });
+
+    // 폴백: 부모 페이지 바로가기 helper (원하면 UI에 노출 가능)
+    function parentPageUrl(){
+      return `${CONFLUENCE_BASE}/pages/viewpage.action?pageId=${PARENT_PAGE_ID}`;
+    }
   </script>
 </body>
 </html>
