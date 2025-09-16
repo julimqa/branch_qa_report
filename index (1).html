@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QA Report 생성기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .spin { animation: spin 1s linear infinite }
+    @keyframes spin { to { transform: rotate(360deg) } }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <main class="max-w-3xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-2xl font-semibold tracking-tight">QA Report 생성기</h1>
+      <p class="text-sm text-slate-500">Confluence 리포트를 생성하고, 생성된 페이지로 바로 이동하세요.</p>
+    </header>
+
+    <!-- 탭 -->
+    <div class="mb-4 inline-flex rounded-lg border bg-white p-1">
+      <button id="tab-branch" class="px-4 py-2 text-sm rounded-md bg-slate-900 text-white">Branch : AffectedVersion 기반</button>
+      <button id="tab-release" class="px-4 py-2 text-sm rounded-md text-slate-600 hover:text-slate-900">Release : LinkedIssues 기반</button>
+    </div>
+
+    <!-- Branch Report 카드 -->
+    <section id="card-branch" class="rounded-2xl bg-white shadow-sm border p-6 space-y-5">
+      <div class="space-y-1">
+        <h2 class="text-lg font-semibold">Branch Report</h2>
+        <p class="text-sm text-slate-500">JQL의 날짜 범위와 <code>affectedVersion</code>을 치환합니다.</p>
+      </div>
+
+      <form id="form-branch" class="space-y-4" action="https://n8n.ovdr.io/webhook/confluence/copy-and-replace" method="GET" target="sink">
+        <label class="block">
+          <span class="text-sm font-medium">affectedVersion</span>
+          <input id="input-affected" name="affectedVersion" type="text"
+                 placeholder="예: 1.0 Alpha Release"
+                 class="mt-1 w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400" />
+        </label>
+
+        <div class="flex items-center gap-2">
+          <button type="submit"
+                  class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.99]">
+            <span class="spin hidden" id="spin-branch">⏳</span>
+            <span>Run Branch Report</span>
+          </button>
+          <button type="button" id="preview-branch"
+                  class="text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4">
+            변경 내용 미리보기
+          </button>
+          <a id="open-branch" href="#" target="_blank" rel="noopener"
+             class="hidden text-sm rounded-lg border px-3 py-2 hover:bg-slate-50">생성된 페이지 열기</a>
+        </div>
+      </form>
+
+      <div id="result-branch" class="hidden rounded-xl border bg-slate-50 p-4 text-sm space-y-2"></div>
+    </section>
+
+    <!-- Release Report 카드 -->
+    <section id="card-release" class="hidden rounded-2xl bg-white shadow-sm border p-6 space-y-5">
+      <div class="space-y-1">
+        <h2 class="text-lg font-semibold">Release Report</h2>
+        <p class="text-sm text-slate-500">JQL의 날짜 범위와 <code>linkedIssues("…")</code>를 치환합니다.</p>
+      </div>
+
+      <form id="form-release" class="space-y-4" action="https://n8n.ovdr.io/webhook/confluence/copy-and-replace-release" method="GET" target="sink">
+        <label class="block">
+          <span class="text-sm font-medium">linked (Jira Key)</span>
+          <input id="input-linked" name="linked" type="text"
+                 placeholder="예: QA-4362"
+                 class="mt-1 w-full rounded-lg border px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400" />
+        </label>
+
+        <div class="flex items-center gap-2">
+          <button type="submit"
+                  class="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.99]">
+            <span class="spin hidden" id="spin-release">⏳</span>
+            <span>Run Release Report</span>
+          </button>
+          <button type="button" id="preview-release"
+                  class="text-sm text-slate-600 hover:text-slate-900 underline underline-offset-4">
+            변경 내용 미리보기
+          </button>
+          <a id="open-release" href="#" target="_blank" rel="noopener"
+             class="hidden text-sm rounded-lg border px-3 py-2 hover:bg-slate-50">생성된 페이지 열기</a>
+        </div>
+      </form>
+
+      <div id="result-release" class="hidden rounded-xl border bg-slate-50 p-4 text-sm space-y-2"></div>
+    </section>
+
+    <!-- 숨김 iframe: JSON 노출 없이 호출만 수행 + postMessage 수신 -->
+    <iframe id="sink" name="sink" class="hidden" referrerpolicy="no-referrer"></iframe>
+  </main>
+
+  <script>
+    // ====== 환경 설정 ======
+    const CONFLUENCE_BASE = "https://overdare.atlassian.net/wiki"; // webui 앞에 붙일 호스트
+    const PARENT_PAGE_ID = "29698636"; // 부모 페이지(폴백)로 이동할 때 사용
+
+    // ====== 탭 전환 ======
+    const tabBranch  = document.getElementById('tab-branch');
+    const tabRelease = document.getElementById('tab-release');
+    const cardBranch = document.getElementById('card-branch');
+    const cardRelease= document.getElementById('card-release');
+    function setTab(which){ 
+      const isBranch = which === 'branch';
+      tabBranch.className  = "px-4 py-2 text-sm rounded-md " + (isBranch ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900");
+      tabRelease.className = "px-4 py-2 text-sm rounded-md " + (!isBranch ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900");
+      cardBranch.classList.toggle('hidden', !isBranch);
+      cardRelease.classList.toggle('hidden', isBranch);
+    }
+    tabBranch.onclick  = ()=>setTab('branch');
+    tabRelease.onclick = ()=>setTab('release');
+    setTab('branch');
+
+    // ====== 포맷터/유틸 ======
+    const fmt2 = n => String(n).padStart(2,'0');
+    function kstDateParts(d=new Date()){
+      // KST 보장을 위한 로컬 계산 (몇 초 차이 가능성은 존재)
+      const s = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+      return { yyyy:s.getFullYear(), mm:fmt2(s.getMonth()+1), dd:fmt2(s.getDate()), HH:fmt2(s.getHours()), MM:fmt2(s.getMinutes()), SS:fmt2(s.getSeconds()) };
+    }
+    function jqlDateKST(){ const p=kstDateParts(); return `${p.yyyy}/${p.mm}/${p.dd}`; }
+    function titleStampKST(){ const p=kstDateParts(); return `${p.yyyy.toString().slice(-2)}/${p.mm}/${p.dd}${p.HH}:${p.MM}:${p.SS}`; }
+    function el(id){ return document.getElementById(id); }
+    function showResult(boxId, html){ const box=el(boxId); box.innerHTML=html; box.classList.remove('hidden'); }
+    function hideResult(boxId){ const box=el(boxId); box.classList.add('hidden'); box.innerHTML=""; }
+    function busy(spinId, on){ el(spinId).classList.toggle('hidden', !on); }
+    function escapeHtml(s){ return s.replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    function successBlock(inner){
+      return `<div class="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-800 text-sm">
+        <div class="font-medium mb-1">✅ 성공</div>
+        <div>${inner}</div>
+      </div>`;
+    }
+
+    // ====== 미리보기 ======
+    function previewBranch(avRaw){
+      const date = jqlDateKST();
+      const start = `${date} 00:00`;
+      const end   = `${date} 23:59`;
+      const av = (avRaw||"").trim();
+      const title = titleStampKST() + (av ? ` - ${escapeHtml(av)}` : "");
+      const avLine = av ? `<li>affectedVersion → <code>"${escapeHtml(av)}"</code></li>` : `<li>affectedVersion 변경 없음</li>`;
+      showResult("result-branch", `
+        <div class="text-slate-700">
+          <div class="font-medium mb-1">이번 실행으로 적용되는 변경</div>
+          <ul class="list-disc pl-5 space-y-1">
+            <li>created &gt;= '<code>${start}</code>'</li>
+            <li>created &lt;= '<code>${end}</code>'</li>
+            ${avLine}
+            <li>제목: <code>${title}</code></li>
+          </ul>
+        </div>`);
+    }
+    function previewRelease(linkedRaw){
+      const date = jqlDateKST();
+      const start = `${date} 00:00`;
+      const end   = `${date} 23:59`;
+      const lk = (linkedRaw||"").trim();
+      const title = titleStampKST() + (lk ? ` - ${escapeHtml(lk)}` : "");
+      const lkLine = lk ? `<li>linkedIssues → <code>"${escapeHtml(lk)}"</code></li>` : `<li>linkedIssues 변경 없음</li>`;
+      showResult("result-release", `
+        <div class="text-slate-700">
+          <div class="font-medium mb-1">이번 실행으로 적용되는 변경</div>
+          <ul class="list-disc pl-5 space-y-1">
+            <li>created &gt;= '<code>${start}</code>'</li>
+            <li>created &lt;= '<code>${end}</code>'</li>
+            ${lkLine}
+            <li>제목: <code>${title}</code></li>
+          </ul>
+        </div>`);
+    }
+
+    // ====== 제출 이벤트 (프리뷰 + 스피너 + 폴백 링크 준비) ======
+    let lastKind = null;
+    document.getElementById('form-branch').addEventListener('submit', (e)=>{
+      lastKind = 'branch';
+      busy('spin-branch', true);
+      hideResult('result-branch');
+      previewBranch(document.getElementById('input-affected').value);
+      // 폴백 링크(부모 페이지) 미리 세팅
+      const url = `${CONFLUENCE_BASE}/pages/viewpage.action?pageId=${PARENT_PAGE_ID}`;
+      const a = document.getElementById('open-branch');
+      a.href = url; a.classList.remove('hidden');
+      // 스피너는 iframe load에서 끄거나 1.5s 타임아웃으로 끈다
+      setTimeout(()=>busy('spin-branch', false), 1500);
+    });
+    document.getElementById('form-release').addEventListener('submit', (e)=>{
+      lastKind = 'release';
+      busy('spin-release', true);
+      hideResult('result-release');
+      previewRelease(document.getElementById('input-linked').value);
+      const url = `${CONFLUENCE_BASE}/pages/viewpage.action?pageId=${PARENT_PAGE_ID}`;
+      const a = document.getElementById('open-release');
+      a.href = url; a.classList.remove('hidden');
+      setTimeout(()=>busy('spin-release', false), 1500);
+    });
+
+    document.getElementById('preview-branch').onclick = ()=>{
+      hideResult('result-branch'); previewBranch(document.getElementById('input-affected').value);
+    };
+    document.getElementById('preview-release').onclick = ()=>{
+      hideResult('result-release'); previewRelease(document.getElementById('input-linked').value);
+    };
+
+    // ====== iframe 로드(요청 완료) 신호로 성공 메시지 표기 ======
+    const sink = document.getElementById('sink');
+    sink.addEventListener('load', ()=>{
+      if (lastKind === 'branch'){
+        showResult("result-branch", successBlock(`트리거가 전송되었습니다. <a href="${document.getElementById('open-branch').href}" target="_blank" rel="noopener" class="underline">페이지 열기</a>`));
+        busy('spin-branch', false);
+      } else if (lastKind === 'release'){
+        showResult("result-release", successBlock(`트리거가 전송되었습니다. <a href="${document.getElementById('open-release').href}" target="_blank" rel="noopener" class="underline">페이지 열기</a>`));
+        busy('spin-release', false);
+      }
+    });
+
+    // ====== n8n이 postMessage로 정확한 페이지 링크를 줄 경우 버튼 업데이트 ======
+    window.addEventListener('message', (event)=>{
+      const d = event.data || {};
+      if (d && (d.source === 'ovdr-report') && (d.webui || d.pageUrl)){
+        const url = d.pageUrl ? d.pageUrl : (CONFLUENCE_BASE + d.webui);
+        if (url){
+          const a1 = document.getElementById('open-branch');
+          const a2 = document.getElementById('open-release');
+          [a1, a2].forEach(a => { a.href = url; a.classList.remove('hidden'); });
+        }
+      }
+    });
+  </script>
+</body>
+</html>
